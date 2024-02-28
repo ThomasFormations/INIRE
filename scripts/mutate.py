@@ -67,6 +67,7 @@ class Mutator():
     def flush(self):
         self.cachedSequences = {}
 
+    @property
     def chromosomes(self):
         return self.references
 
@@ -243,10 +244,10 @@ def main(inputbed, genome, outfasta):
 def parse_arguments():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
                                      description=textwrap.dedent('''\
-                                     Run glint alignment of query on subject region
+                                     Mutate a genome fasta sequence according to the mutations specified in a bed file
                                      '''))
-    parser.add_argument('--input',
-                        required=True, help='the input file')
+    parser.add_argument('--bed',
+                        required=True, help='the input bed file file')
     parser.add_argument('--genome',
                         required=True, help='the genome fasta file')
     parser.add_argument('--output',
@@ -259,4 +260,4 @@ def parse_arguments():
 if __name__ == '__main__':
     args = parse_arguments()
 
-    main(args.input, args.genome, args.output)
+    main(args.bed, args.genome, args.output)
