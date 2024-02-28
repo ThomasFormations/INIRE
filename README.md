@@ -1,3 +1,3 @@
 # INIRE@INRAE
 
-A repositry with code
+A repository with code
