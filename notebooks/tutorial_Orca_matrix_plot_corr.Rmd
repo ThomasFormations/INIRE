@@ -1,0 +1,468 @@
+---
+title: "Tutorial_Orca_matrix_plot_corr"
+author: "Nicolas MARY"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+    html_document:
+      number_sections: yes
+      toc: yes
+      toc_depth: 3
+      code_folding: show
+---
+
+# Package install
+
+This tutorial requires several packages. All packages are either available on Cran or Bioconductor. Only 1 package created specifically for this tutorial can be installed from GitHub.
+
+First of all, to install packages from GitHub we need to install some packages:
+```{r, eval=FALSE}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("biocViews")
+install.packages("devtools")
+```
+
+Now you should be able to install TADkit_dev2 from GitHub with:
+```{r, eval=FALSE}
+devtools::install_github("Nico-FR/TADkit_dev2")
+```
+
+To learn what you can do with this package and how to do it, you should follow this tutorial:
+https://github.com/Nico-FR/TADkit
+
+# Load packages
+
+Here are the packages we need. If they are not installed on your computer, you must install them first.
+```{r, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(TADkitdev2)
+library(BiocGenerics)
+```
+
+
+# Control matrices
+
+## Load 2 matrices
+
+```{r}
+#load control matrix of bovin "3654" at 64kb resolution for chr 1 as sparse matrix
+mat3654_norm = read.table("./Control_matrices/mat3654_ice_chr1_64kb.txt", sep = " ", h = F) %>% as.matrix %>% as("CsparseMatrix")
+
+#get Observed / Expected matrix
+mat3654_norm_OE = matObsExp(mat3654_norm)
+
+#idem for bovin "0197"
+mat0197_norm = read.table("./Control_matrices/mat0197_ice_chr1_64kb.txt", sep = " ", h = F) %>% as.matrix %>% as("CsparseMatrix")
+mat0197_norm_OE = matObsExp(mat0197_norm)
+```
+
+## Plot matrices
+
+```{r}
+#plot 1 matrix between 1 to 11Mb
+MATplot(matrix = mat3654_norm,
+        start = 8e6, stop = 24e6,
+        bin.width = 64e3,
+        log2 = TRUE,
+        scale.color = "H",
+        tad.upper.tri = "./Control_matrices/tad3654_10kb.bed")+
+  ggtitle("matrix 3654 normalized")
+
+MATplot(matrix = mat3654_norm_OE,
+        start = 8e6, stop = 24e6,
+        bin.width = 64e3,
+        log2 = TRUE,
+        scale.color = "OE",
+        tad.upper.tri = "./Control_matrices/tad3654_10kb.bed")+
+  ggtitle("Obs/Exp matrix 3654 normalized")
+
+#plot 2 matrices: 3654 & 0197 (upper and lower part of the matrix respectively)
+mMATplot(matrix.upper = mat3654_norm_OE,
+         matrix.lower = mat0197_norm_OE,
+         start = 8e6, stop = 24e6, bin.width = 64e3,
+         log2 = TRUE, scale.colors = "OE",
+         matrix.upper.txt = "3654",
+         matrix.lower.txt = "0197",
+         tad.upper.tri = "./Control_matrices/tad3654_10kb.bed",
+         tad.lower.tri = "./Control_matrices/tad0197_10kb.bed")+
+  ggtitle("Obs/Exp matrices normalized")
+```
+
+## Correlation analysis
+
+### Observed
+
+Create a list with the matrices
+```{r}
+#create a list with the 2 matrices:
+mat_norm.lst = list(mat0197 = mat0197_norm,
+                    mat3654 = mat3654_norm)
+```
+
+Compute Pearson correlation coefficient between observed counts of all counts and plot the graph:
+```{r}
+matCorr(
+  matrice.lst = mat_norm.lst,
+  log2 = FALSE,
+  output = "plot",
+  self_interaction = TRUE,
+  max.distance = NULL,
+  bin.width = NULL,
+  method = "pearson")+
+  ggtitle("observed counts")
+```
+
+This graph shows that the correlation is significantly impacted by bins with many interactions (top right of the graph). Most of these values come from the number of interactions within a bin (i.e. the diagonal of the matrix). So we can remove then with the parameter: self_interaction = FALSE.
+```{r}
+matCorr(
+  matrice.lst = mat_norm.lst,
+  log2 = FALSE,
+  output = "plot",
+  self_interaction = FALSE,
+  max.distance = NULL,
+  bin.width = NULL,
+  method = "pearson")+
+  ggtitle("observed counts (without diagonal)")
+```
+
+Here too, the correlation coefficient is mainly influenced by the few values with a large number of interactions. Knowing that the number of interactions decreases exponentially with distance you can use the log(observed count):
+```{r}
+matCorr(
+  matrice.lst = mat_norm.lst,
+  log2 = TRUE,
+  output = "plot",
+  self_interaction = FALSE,
+  max.distance = NULL,
+  bin.width = NULL,
+  method = "pearson")+
+  ggtitle("log(observed counts)")
+```
+
+### Observed /Expected
+
+To avoid the effect of distance between interactions, we can use Observed / Expected matrices:
+```{r}
+#create a list with the 2 matrices:
+mat_norm_OE.lst = list(mat0197 = mat0197_norm_OE,
+                    mat3654 = mat3654_norm_OE)
+
+
+matCorr(
+  matrice.lst = mat_norm_OE.lst,
+  log2 = TRUE,
+  output = "plot",
+  self_interaction = TRUE,
+  max.distance = NULL,
+  bin.width = NULL,
+  method = "pearson")+
+  ggtitle("log2(observed / Expected counts)")
+
+```
+
+Finally, this correlation can only be made for interactions for which distances (between bins) are less than 3.2Mb.
+```{r}
+matCorr(
+  matrice.lst = mat_norm_OE.lst,
+  log2 = TRUE,
+  output = "plot",
+  self_interaction = TRUE,
+  max.distance = 3.2e6,
+  bin.width = 64e3,
+  method = "pearson")+
+  ggtitle("log2(observed / Expected counts) ; interact. dist. <= 3.2Mb")
+```
+
+
+# Orca matrices
+
+Orca output 250x250 log(observed/expected) and log(expected) matrices at different resolutions. Here's the table of possible Orca predictions :
+```{r echo=FALSE}
+data.frame(
+  nb_bins = 250,
+  bin_width = c(4e3, 8e3, 16e3, 32e3, 64e3, 128e3),
+  predicton_size = c(4e3, 8e3, 16e3, 32e3, 64e3, 128e3) * 250
+)
+```
+
+We'll therefore use the same resolution of the control matrices (i.e. 64kb) which give us the predicted matrices for a 16Mb sequence. 
+```{r}
+matOrca = read.table("./Orca/bos_taurus/wildtype/orca_predictions_16Mb.txt", header = FALSE) %>% as.matrix()
+
+#plot the 250 bins
+MATplot(matrix = matOrca,
+        start = 1, stop = 16e6, bin.width = 64e3,
+        scale.colors = "OE",
+        log2 = FALSE)
+```
+
+## Load Orca matrices
+
+As mentioned above, Orca output 250x250 log(observed/expected) and log(expected) matrices at different resolutions. On the other hand, our control matrices have a bin number that depends on the resolution. For a resolution of 64kb, the bin number of chromosome 1, which has a size of 158.53411 Mb, is 158.53411e6 / 64e3 = 2478.
+
+To compare matrices, the simplest option is to create an empty matrix (of 2478 bins) into which we'll add Orca matrix at the right position (i.e. between 8 and 24Mb). To do this, we've created a function that returns the observed or observed/expected matrix:
+
+### Observed / expected
+
+```{r}
+#load observed/expected matrix of size = 16Mb and centered at 16Mb
+matOrca_OE = orca2matrix(
+  df_prediction.path = "./Orca/bos_taurus/wildtype/orca_predictions_16Mb.txt", 
+  sep = "\t",
+  mpos = 16e6, 
+  chromsize = 158.53411e6, 
+  output = "OE", scale = 16e6)
+
+TADkit::MATplot(matOrca_OE, bin.width = 64e3, start = 8e6, stop = 24e6, scale.colors = "OE", log2 = T)
+```
+
+### Observed
+
+```{r}
+#load observed matrix of size = 16Mb and centered at 2Mb
+matOrca = orca2matrix(
+  df_prediction.path = "./Orca/bos_taurus/wildtype/orca_predictions_16Mb.txt", 
+  sep = "\t",
+  mpos = 16e6, 
+  chromsize = 158.534110e6, 
+  output = "Obs", scale = 16e6,
+  df_normmats.path = "./Orca/bos_taurus/wildtype/orca_normmats_16Mb.txt")
+
+TADkit::MATplot(matOrca, bin.width = 64e3, start = 8e6, stop = 24e6, scale.colors = "H", log2 = T)
+```
+
+# Orca VS control matrices
+
+```{r}
+mMATplot(matrix.upper = matOrca_OE, matrix.lower = mat0197_norm_OE, bin.width = 64e3, start = 8e6, stop = 24e6, scale.colors = "OE", log2 = T, matrix.upper.txt = "orca", matrix.lower.txt = "0197")+ggtitle("log2(observed / Expected)")
+```
+
+## Fold changes between 2 matrices
+```{r}
+#fold changes between 2 matrices
+MATplot(matrix = mat0197_norm_OE / matOrca_OE, bin.width = 64e3, start = 8e6, stop = 24e6, scale.colors = "OE2", log2 = T)+ggtitle("log2(mat0197_norm_OE / matOrca_OE)")
+```
+
+## Correlations analysis
+
+### Observed
+
+Create a list with all the matrices:
+```{r}
+mat_norm.lst = list(orca = matOrca,
+                    mat0197 = mat0197_norm,
+                    mat3654 = mat3654_norm)
+```
+
+Compute correlations between matrices:
+```{r}
+matCorr(
+  matrice.lst = mat_norm.lst,
+  log2 = TRUE,
+  output = "corr",
+  self_interaction = FALSE,
+  max.distance = NULL,
+  bin.width = NULL,
+  method = "pearson")
+```
+
+Plot correlations between the first two matrices:
+```{r}
+matCorr(
+  matrice.lst = mat_norm.lst,
+  log2 = TRUE,
+  output = "plot",
+  self_interaction = FALSE,
+  max.distance = NULL,
+  bin.width = NULL,
+  method = "pearson")+
+  ggtitle("log2(observed counts)")
+```
+
+### Observed / Expected
+
+#### All bins
+
+```{r}
+mat_norm_OE.lst = list(orca = matOrca_OE,
+                    mat0197 = mat0197_norm_OE,
+                    mat3654 = mat3654_norm_OE)
+
+matCorr(
+  matrice.lst = mat_norm_OE.lst,
+  log2 = TRUE,
+  output = "corr",
+  self_interaction = TRUE,
+  max.distance = NULL,
+  bin.width = NULL,
+  method = "pearson")
+
+matCorr(
+  matrice.lst = mat_norm_OE.lst,
+  log2 = TRUE,
+  output = "plot",
+  self_interaction = TRUE,
+  max.distance = NULL,
+  bin.width = NULL,
+  method = "pearson")+
+  ggtitle("log2(observed / Expected)")
+```
+
+
+#### Bin distances <= 3.2Mb
+
+```{r}
+matCorr(
+  matrice.lst = mat_norm_OE.lst,
+  log2 = TRUE,
+  output = "corr",
+  self_interaction = TRUE,
+  max.distance = 3.2e6,
+  bin.width = 64e3,
+  method = "pearson")
+
+matCorr(
+  matrice.lst = mat_norm_OE.lst,
+  log2 = TRUE,
+  output = "plot",
+  self_interaction = TRUE,
+  max.distance = 3.2e6,
+  bin.width = 64e3,
+  method = "pearson")+
+  ggtitle("log2(observed / Expected)")
+```
+
+
+
+## Pileup of TAD boundaries
+
+### Observed
+
+```{r}
+#load TAD domains as GRanges (.bed to GRanges)
+tad0197.gr = dataframes2grange(
+  annotation.table = read.table("./Control_matrices/tad3654_10kb.bed", h = F, sep = "\t"),
+  chromsize = data.frame(chr = 1, size = 158.53411e6))
+
+#filter TAD within Orca matrix
+window = 1.6e6 # matrices (that we'll stack with MATfeatures function) = TAD starts +/-1.6Mb 
+tad0197_8_24Mb.gr = tad0197.gr[start(tad0197.gr) >= 8e6 + window &
+                                 start(tad0197.gr) <= 24e6 - window]
+
+#pileup
+MATfeatures(
+  matrix = mat0197_norm,
+  bin.width = 64e3,
+  annot.gr = tad0197_8_24Mb.gr,
+  chr = 1,
+  window.size = window,
+  output = "plot")+ggtitle("Observed matrix pileup of 20 TAD +/- 1.6Mb: 0197")
+
+MATfeatures(
+  matrix = matOrca,
+  bin.width = 64e3,
+  annot.gr = tad0197_8_24Mb.gr,
+  chr = 1,
+  window.size = window,
+  output = "plot")+ggtitle("Observed matrix pileup of 20 TAD +/- 1.6Mb: Orca")
+```
+
+### Observed / expected
+
+To compare orca matrices with matrices obtained differently (e.g. control matrices), it's best to use matrices that are normalized by distance (i.e. O/E). In this case, the MATfeature function cannot be used directly to produce the graph. Instead, we first need to use the MATfeature function to obtain the sum of the O/E matrices and then make the graph.
+
+```{r}
+pileup0197 = MATfeatures(
+  matrix = mat0197_norm_OE,
+  bin.width = 64e3,
+  annot.gr = tad0197_8_24Mb.gr,
+  chr = 1,
+  window.size = window,
+  output = "matrix")
+
+
+pileupOrca = MATfeatures(
+  matrix = matOrca_OE,
+  bin.width = 64e3,
+  annot.gr = tad0197_8_24Mb.gr,
+  chr = 1,
+  window.size = window,
+  output = "matrix")
+
+
+mMATplot(matrix.upper = pileup0197 / 20, # /20 to get mean(ObsExp) instead of sum(20 x ObsExp)
+         matrix.lower = pileupOrca / 20,
+         start = 1, stop = (window + 64e3) * 2, bin.width = 64e3,
+         log2 = TRUE,
+         scale.colors = "OE")
+```
+
+## view point
+
+We'd now like to look at how one region (e.g. a TAD) interacts with other bins.
+Let check the interactions of this TAD:
+
+```{r}
+#TAD for analysis:
+tad = read.table("./Control_matrices/tad0197_10kb.bed", h=F, sep = "\t")[28,]
+
+#plot 
+mMATplot(matrix.upper = mat3654_norm_OE,
+         matrix.lower = matOrca_OE,
+        start = 8e6, stop = 20e6,
+        bin.width = 64e3,
+        log2 = TRUE,
+        scale.color = "OE",
+        tad.upper.tri = tad,
+        tad.lower.tri = tad,
+        matrix.upper.txt = "3654",
+        matrix.lower.txt = "Orca")
+```
+
+We can visualize the interaction of this TAD with the rest of the genome with viewPointInteract funtion:
+
+```{r}
+viewPointInteract(matrix.lst = mat_norm.lst,
+                  bin.width = 64e3,
+                  vp.start = tad$V2 + 64e3, vp.stop = tad$V3 + 64e3,
+                  start = 8e6, stop = 20e6,
+                  log2 = T, norm = T)+ggtitle("VP interactions: Observed")
+
+viewPointInteract(matrix.lst = mat_norm_OE.lst,
+                  bin.width = 64e3,
+                  vp.start = tad$V2 + 64e3, vp.stop = tad$V3 + 64e3,
+                  start = 8e6, stop = 20e6,
+                  log2 = T, norm = F)+ggtitle("VP interaction: Obs /Exp")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
